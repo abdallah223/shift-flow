@@ -1,0 +1,318 @@
+import React, { createContext, useContext, useEffect, useRef, useState } from "react";
+import { dbInstance } from "../db/database.js";
+import { DEFAULT_CATEGORIES } from "../data/categories.js";
+
+const AppContext = createContext();
+
+export function AppProvider({ children }) {
+  const [currentView, setCurrentView] = useState("dashboard");
+  const [theme, setTheme] = useState("dark");
+  const [categories, setCategories] = useState([]);
+  const [activities, setActivities] = useState([]);
+  const [favorites, setFavorites] = useState([]);
+  const [templates, setTemplates] = useState([]);
+  const [activeActivity, setActiveActivity] = useState(null);
+  const [timerSeconds, setTimerSeconds] = useState(0);
+  const [isPaused, setIsPaused] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const [showQuickAdd, setShowQuickAdd] = useState(false);
+  const [showManualAdd, setShowManualAdd] = useState(false);
+  const [showCommandPalette, setShowCommandPalette] = useState(false);
+  const [historyUndo, setHistoryUndo] = useState(null);
+
+  const [workHoursGoal, setWorkHoursGoal] = useState(8);
+
+  const timerRef = useRef(null);
+
+  useEffect(() => {
+    dbInstance.init().then(() => {
+      dbInstance.getAll("categories").then(async (cats) => {
+        if (cats.length === 0) {
+          for (const c of DEFAULT_CATEGORIES) {
+            await dbInstance.put("categories", c);
+          }
+          setCategories(DEFAULT_CATEGORIES);
+        } else {
+          setCategories(cats);
+        }
+      });
+
+      dbInstance.getAll("activities").then((logs) => {
+        const sorted = logs.sort((a, b) => new Date(b.startTime) - new Date(a.startTime));
+        setActivities(sorted);
+      });
+
+      dbInstance.getAll("favorites").then(setFavorites);
+      dbInstance.getAll("templates").then(setTemplates);
+      dbInstance.getAll("settings").then((settings) => {
+        const themeSetting = settings.find((s) => s.key === "theme");
+        if (themeSetting) {
+          setTheme(themeSetting.value);
+          document.documentElement.className = themeSetting.value;
+        } else {
+          document.documentElement.className = "dark";
+        }
+        const goalSetting = settings.find((s) => s.key === "workHoursGoal");
+        if (goalSetting) {
+          setWorkHoursGoal(Number(goalSetting.value));
+        }
+      });
+    });
+  }, []);
+
+  useEffect(() => {
+    if (activeActivity && !isPaused) {
+      timerRef.current = setInterval(() => {
+        setTimerSeconds((prev) => prev + 1);
+      }, 1000);
+    } else {
+      clearInterval(timerRef.current);
+    }
+    return () => clearInterval(timerRef.current);
+  }, [activeActivity, isPaused]);
+
+  const toggleTheme = () => {
+    const newTheme = theme === "dark" ? "light" : "dark";
+    setTheme(newTheme);
+    document.documentElement.className = newTheme;
+    dbInstance.put("settings", { key: "theme", value: newTheme });
+  };
+
+  const updateWorkHoursGoal = (val) => {
+    setWorkHoursGoal(Number(val));
+    dbInstance.put("settings", { key: "workHoursGoal", value: val });
+  };
+
+  const startNewActivity = async (title, categoryName, project = "General", notes = "") => {
+    if (activeActivity) {
+      await stopCurrentActivity();
+    }
+
+    const cat = categories.find((c) => c.name === categoryName) || categories[0] || DEFAULT_CATEGORIES[0];
+    const now = new Date();
+
+    const newAct = {
+      title: title || "Working on deliverables",
+      category: cat.name,
+      color: cat.color || "#6366f1",
+      icon: cat.icon || "headphones",
+      project: project || "General",
+      notes: notes || "",
+      startTime: now.toISOString(),
+      endTime: null,
+      duration: 0,
+    };
+
+    setActiveActivity(newAct);
+    setTimerSeconds(0);
+    setIsPaused(false);
+  };
+
+  const stopCurrentActivity = async () => {
+    if (!activeActivity) return;
+
+    const now = new Date();
+    const start = new Date(activeActivity.startTime);
+
+    const elapsedMinutes = Math.max(1, Math.round((now - start) / 60000));
+
+    const completedAct = {
+      ...activeActivity,
+      endTime: now.toISOString(),
+      duration: elapsedMinutes,
+    };
+
+    const savedId = await dbInstance.put("activities", completedAct);
+    completedAct.id = savedId;
+
+    setActivities((prev) => {
+      const next = [completedAct, ...prev];
+      return next.sort((a, b) => new Date(b.startTime) - new Date(a.startTime));
+    });
+    setActiveActivity(null);
+    setTimerSeconds(0);
+    setIsPaused(false);
+  };
+
+  const addManualActivity = async (title, categoryName, project, notes, startTimeStr, endTimeStr) => {
+    const newStart = new Date(startTimeStr);
+    const newEnd = new Date(endTimeStr);
+    const now = new Date();
+
+    if (newStart >= newEnd) {
+      return { success: false, error: "End time must be logically after the start time." };
+    }
+
+    if (newEnd > now) {
+      return { success: false, error: "Cannot log retroactive activities into the future." };
+    }
+
+    const isHistoricalOverlap = activities.some((act) => {
+      const actStart = new Date(act.startTime).getTime();
+      const actEnd = act.endTime ? new Date(act.endTime).getTime() : now.getTime();
+      return newStart.getTime() < actEnd && newEnd.getTime() > actStart;
+    });
+
+    if (isHistoricalOverlap) {
+      return { success: false, error: "Time range directly overlaps with a previously logged entry." };
+    }
+
+    if (activeActivity) {
+      const activeStart = new Date(activeActivity.startTime).getTime();
+      if (newStart.getTime() < now.getTime() && newEnd.getTime() > activeStart) {
+        return { success: false, error: "Time range overlaps with your currently running tracking session." };
+      }
+    }
+
+    const cat = categories.find((c) => c.name === categoryName) || categories[0] || DEFAULT_CATEGORIES[0];
+    const elapsedMinutes = Math.max(1, Math.round((newEnd - newStart) / 60000));
+
+    const newAct = {
+      title: title || "Manual retroactive entry",
+      category: cat.name,
+      color: cat.color || "#6366f1",
+      icon: cat.icon || "headphones",
+      project: project || "General",
+      notes: notes || "",
+      startTime: newStart.toISOString(),
+      endTime: newEnd.toISOString(),
+      duration: elapsedMinutes,
+    };
+
+    const savedId = await dbInstance.put("activities", newAct);
+    newAct.id = savedId;
+
+    setActivities((prev) => {
+      const updated = [...prev, newAct];
+      return updated.sort((a, b) => new Date(b.startTime) - new Date(a.startTime));
+    });
+
+    return { success: true };
+  };
+
+  const deleteActivity = async (id) => {
+    const target = activities.find((a) => a.id === id);
+    if (target) {
+      setHistoryUndo(target);
+    }
+    await dbInstance.delete("activities", id);
+    setActivities((prev) => prev.filter((a) => a.id !== id));
+  };
+
+  const triggerUndo = async () => {
+    if (historyUndo) {
+      const restoredId = await dbInstance.put("activities", historyUndo);
+      const restoredItem = { ...historyUndo, id: restoredId };
+      setActivities((prev) =>
+        [restoredItem, ...prev].sort((a, b) => new Date(b.startTime) - new Date(a.startTime)),
+      );
+      setHistoryUndo(null);
+    }
+  };
+
+  const toggleFavorite = async (activity) => {
+    const isFav = favorites.some((f) => f.title === activity.title && f.category === activity.category);
+    if (isFav) {
+      const target = favorites.find((f) => f.title === activity.title && f.category === activity.category);
+      await dbInstance.delete("favorites", target.id);
+      setFavorites((prev) => prev.filter((f) => f.id !== target.id));
+    } else {
+      const newFav = {
+        title: activity.title,
+        category: activity.category,
+        project: activity.project || "General",
+        notes: activity.notes || "",
+      };
+      const id = await dbInstance.put("favorites", newFav);
+      newFav.id = id;
+      setFavorites((prev) => [...prev, newFav]);
+    }
+  };
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "k") {
+        e.preventDefault();
+        setShowCommandPalette((prev) => !prev);
+      }
+
+      if (
+        document.activeElement.tagName === "INPUT" ||
+        document.activeElement.tagName === "TEXTAREA" ||
+        document.activeElement.tagName === "SELECT"
+      ) {
+        return;
+      }
+
+      switch (e.key.toLowerCase()) {
+        case "n":
+          e.preventDefault();
+          setShowQuickAdd(true);
+          break;
+        case " ":
+          e.preventDefault();
+          if (activeActivity) {
+            setIsPaused((prev) => !prev);
+          }
+          break;
+        case "e":
+          e.preventDefault();
+          setCurrentView("export");
+          break;
+        default:
+          break;
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [activeActivity]);
+
+  return (
+    <AppContext.Provider
+      value={{
+        currentView,
+        setCurrentView,
+        theme,
+        toggleTheme,
+        categories,
+        setCategories,
+        activities,
+        setActivities,
+        favorites,
+        setFavorites,
+        templates,
+        setTemplates,
+        activeActivity,
+        setActiveActivity,
+        timerSeconds,
+        setTimerSeconds,
+        isPaused,
+        setIsPaused,
+        searchQuery,
+        setSearchQuery,
+        showQuickAdd,
+        setShowQuickAdd,
+        showManualAdd,
+        setShowManualAdd,
+        showCommandPalette,
+        setShowCommandPalette,
+        historyUndo,
+        triggerUndo,
+        setHistoryUndo,
+        startNewActivity,
+        stopCurrentActivity,
+        deleteActivity,
+        addManualActivity,
+        toggleFavorite,
+        workHoursGoal,
+        updateWorkHoursGoal,
+      }}
+    >
+      {children}
+    </AppContext.Provider>
+  );
+}
+
+export const useApp = () => useContext(AppContext);

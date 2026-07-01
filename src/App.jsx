@@ -8,7 +8,10 @@ import DashboardView from "./views/DashboardView.jsx";
 import TimelineView from "./views/TimelineView.jsx";
 import CalendarView from "./views/CalendarView.jsx";
 import ReportsView from "./views/ReportsView.jsx";
+import OperationsReportsView from "./views/OperationsReportsView.jsx";
+import ProductivityView from "./views/ProductivityView.jsx";
 import ExportView from "./views/ExportView.jsx";
+import TasksView from "./views/TasksView.jsx";
 import SettingsView from "./views/SettingsView.jsx";
 
 export default function App() {
@@ -25,6 +28,9 @@ export default function App() {
         {currentView === "timeline" && <TimelineView />}
         {currentView === "calendar" && <CalendarView />}
         {currentView === "reports" && <ReportsView />}
+        {currentView === "operations-reports" && <OperationsReportsView />}
+        {currentView === "productivity" && <ProductivityView />}
+        {currentView === "tasks" && <TasksView />}
         {currentView === "export" && <ExportView />}
         {currentView === "settings" && <SettingsView />}
       </main>

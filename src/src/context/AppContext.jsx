@@ -31,6 +31,33 @@ export function AppProvider({ children }) {
   const [workHoursGoal, setWorkHoursGoal] = useState(8);
 
   const timerRef = useRef(null);
+  const tickCountRef = useRef(0);
+  const timerSecondsRef = useRef(0);
+
+  useEffect(() => {
+    timerSecondsRef.current = timerSeconds;
+  }, [timerSeconds]);
+
+  // Persist the in-progress timer session (active activity + elapsed
+  // seconds + pause state) so a page refresh, tab close, or crash doesn't
+  // silently wipe out whatever the person was tracking.
+  const persistActiveSession = (activity, seconds, paused) => {
+    if (!activity) {
+      dbInstance.delete("settings", "activeSession").catch(() => {});
+      return;
+    }
+    dbInstance
+      .put("settings", {
+        key: "activeSession",
+        value: {
+          activity,
+          timerSeconds: seconds,
+          isPaused: paused,
+          lastSavedAt: new Date().toISOString(),
+        },
+      })
+      .catch(() => {});
+  };
 
   useEffect(() => {
     dbInstance.init().then(() => {
@@ -72,6 +99,30 @@ export function AppProvider({ children }) {
         if (goalSetting) {
           setWorkHoursGoal(Number(goalSetting.value));
         }
+
+        // Restore a timer session that was still running when the app was
+        // last closed. If it wasn't paused, credit the elapsed real-world
+        // time that passed while the app was closed.
+        const sessionSetting = settings.find((s) => s.key === "activeSession");
+        if (sessionSetting?.value?.activity) {
+          const {
+            activity,
+            timerSeconds: savedSeconds,
+            isPaused: savedPaused,
+            lastSavedAt,
+          } = sessionSetting.value;
+          let restoredSeconds = savedSeconds || 0;
+          if (!savedPaused && lastSavedAt) {
+            const gapSeconds = Math.max(
+              0,
+              Math.round((Date.now() - new Date(lastSavedAt).getTime()) / 1000),
+            );
+            restoredSeconds += gapSeconds;
+          }
+          setActiveActivity(activity);
+          setTimerSeconds(restoredSeconds);
+          setIsPaused(!!savedPaused);
+        }
       });
     });
   }, []);
@@ -79,7 +130,16 @@ export function AppProvider({ children }) {
   useEffect(() => {
     if (activeActivity && !isPaused) {
       timerRef.current = setInterval(() => {
-        setTimerSeconds((prev) => prev + 1);
+        setTimerSeconds((prev) => {
+          const next = prev + 1;
+          // Checkpoint the session every ~10s so an unexpected close
+          // doesn't lose more than a few seconds of tracked time.
+          tickCountRef.current += 1;
+          if (tickCountRef.current % 10 === 0) {
+            persistActiveSession(activeActivity, next, false);
+          }
+          return next;
+        });
       }, 1000);
     } else {
       clearInterval(timerRef.current);
@@ -95,8 +155,12 @@ export function AppProvider({ children }) {
   };
 
   const updateWorkHoursGoal = (val) => {
-    setWorkHoursGoal(Number(val));
-    dbInstance.put("settings", { key: "workHoursGoal", value: val });
+    const parsed = Number(val);
+    const clamped = Number.isFinite(parsed)
+      ? Math.min(24, Math.max(1, parsed))
+      : 8;
+    setWorkHoursGoal(clamped);
+    dbInstance.put("settings", { key: "workHoursGoal", value: clamped });
   };
 
   const startNewActivity = async (
@@ -104,6 +168,7 @@ export function AppProvider({ children }) {
     categoryName,
     project = "General",
     notes = "",
+    taskId = null,
   ) => {
     if (activeActivity) {
       await stopCurrentActivity();
@@ -122,6 +187,11 @@ export function AppProvider({ children }) {
       icon: cat.icon || "headphones",
       project: project || "General",
       notes: notes || "",
+      // Explicit link back to the source task (if any) so start/stop and
+      // time-tracking credit-back don't depend on fragile string matching
+      // against the project/title, which breaks as soon as a task has its
+      // own Project/Team Scope value.
+      taskId,
       startTime: now.toISOString(),
       endTime: null,
       duration: 0,
@@ -130,15 +200,28 @@ export function AppProvider({ children }) {
     setActiveActivity(newAct);
     setTimerSeconds(0);
     setIsPaused(false);
+    tickCountRef.current = 0;
+    persistActiveSession(newAct, 0, false);
+  };
+
+  const togglePause = () => {
+    setIsPaused((prev) => {
+      const next = !prev;
+      persistActiveSession(activeActivity, timerSecondsRef.current, next);
+      return next;
+    });
   };
 
   const stopCurrentActivity = async () => {
     if (!activeActivity) return;
 
     const now = new Date();
-    const start = new Date(activeActivity.startTime);
 
-    const elapsedMinutes = Math.max(1, Math.round((now - start) / 60000));
+    // Use the on-screen timer (timerSeconds) as the source of truth for
+    // duration rather than raw wall-clock time. The timer already excludes
+    // any time spent paused, so this keeps pause actually meaningful —
+    // previously the saved duration always counted paused time as worked.
+    const elapsedMinutes = Math.max(1, Math.round(timerSeconds / 60));
 
     const completedAct = {
       ...activeActivity,
@@ -153,9 +236,32 @@ export function AppProvider({ children }) {
       const next = [completedAct, ...prev];
       return next.sort((a, b) => new Date(b.startTime) - new Date(a.startTime));
     });
+
+    // If this activity was started from a Task (see toggleTaskActivity),
+    // credit the tracked time back onto that task so the "time tracked"
+    // figure on the Tasks board actually reflects work done. This is keyed
+    // off the explicit taskId link rather than the project label or title,
+    // since either of those can be duplicated or changed by the user.
+    if (completedAct.taskId) {
+      const linkedTask = tasks.find((t) => t.id === completedAct.taskId);
+      if (linkedTask) {
+        const updatedTask = {
+          ...linkedTask,
+          trackedSeconds: (linkedTask.trackedSeconds || 0) + timerSeconds,
+          updatedAt: now.toISOString(),
+        };
+        await dbInstance.put("tasks", updatedTask);
+        setTasks((prev) =>
+          prev.map((t) => (t.id === linkedTask.id ? updatedTask : t)),
+        );
+      }
+    }
+
     setActiveActivity(null);
     setTimerSeconds(0);
     setIsPaused(false);
+    tickCountRef.current = 0;
+    persistActiveSession(null, 0, false);
   };
 
   const addManualActivity = async (
@@ -250,6 +356,22 @@ export function AppProvider({ children }) {
     start.setHours(8, 0, 0, 0);
     const end = new Date(rawDate);
     end.setHours(17, 0, 0, 0);
+
+    const targetDayKey = rawDate.toDateString();
+    const hasOverlap = activities.some((act) => {
+      const actStart = new Date(act.startTime);
+      const actEnd = act.endTime ? new Date(act.endTime) : new Date();
+      if (actStart.toDateString() !== targetDayKey) return false;
+      return start.getTime() < actEnd.getTime() && end.getTime() > actStart.getTime();
+    });
+
+    if (hasOverlap) {
+      return {
+        success: false,
+        error:
+          "That date already has logged activity or a leave entry overlapping this window.",
+      };
+    }
 
     const category =
       type === "planned" ? "Leave (Planned)" : "Leave (Unplanned)";
@@ -409,10 +531,11 @@ export function AppProvider({ children }) {
   };
 
   const toggleTaskActivity = async (task) => {
-    const isActiveTask =
-      activeActivity &&
-      activeActivity.project === "Tasks" &&
-      activeActivity.title === task.title;
+    // Identify the running session by taskId, not by comparing project
+    // labels/titles — those can be duplicated across tasks or changed by
+    // the user, which previously made "Stop activity" silently fail to
+    // match and start a duplicate session instead.
+    const isActiveTask = activeActivity && activeActivity.taskId === task.id;
     if (isActiveTask) {
       await stopCurrentActivity();
       return { success: true, action: "stopped" };
@@ -433,6 +556,7 @@ export function AppProvider({ children }) {
       task.operationalCategory || "Tasks",
       task.project || "Tasks",
       activityNotes,
+      task.id,
     );
     return { success: true, action: "started" };
   };
@@ -472,6 +596,18 @@ export function AppProvider({ children }) {
         setShowCommandPalette((prev) => !prev);
       }
 
+      // Escape should close whichever modal is open, regardless of
+      // whether focus is currently inside an input.
+      if (e.key === "Escape") {
+        setShowCommandPalette((prev) => {
+          if (prev) return false;
+          return prev;
+        });
+        setShowQuickAdd((prev) => (prev ? false : prev));
+        setShowManualAdd((prev) => (prev ? false : prev));
+        return;
+      }
+
       if (
         document.activeElement.tagName === "INPUT" ||
         document.activeElement.tagName === "TEXTAREA" ||
@@ -488,7 +624,7 @@ export function AppProvider({ children }) {
         case " ":
           e.preventDefault();
           if (activeActivity) {
-            setIsPaused((prev) => !prev);
+            togglePause();
           }
           break;
         case "e":
@@ -529,6 +665,7 @@ export function AppProvider({ children }) {
         setTimerSeconds,
         isPaused,
         setIsPaused,
+        togglePause,
         searchQuery,
         setSearchQuery,
         showQuickAdd,

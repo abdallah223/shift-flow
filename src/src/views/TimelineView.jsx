@@ -118,7 +118,7 @@ export default function TimelineView() {
     <div className="space-y-6 animate-fadeIn">
       <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div>
-          <h1 className="text-xl font-bold tracking-tight text-slate-850 dark:text-slate-100">
+          <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
             Timeline-First Work Log
           </h1>
           <p className="text-xs text-slate-500 dark:text-slate-400">
@@ -212,7 +212,7 @@ export default function TimelineView() {
             return (
               <div key={timeOfDay} className="space-y-3 relative">
                 <div className="flex items-center space-x-2 pl-2">
-                  <div className="w-6 h-6 rounded-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-850 flex items-center justify-center z-10 shadow-sm">
+                  <div className="w-6 h-6 rounded-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-900 flex items-center justify-center z-10 shadow-sm">
                     <DynamicIcon
                       name={
                         timeOfDay === "Morning"
@@ -255,7 +255,7 @@ export default function TimelineView() {
                     return (
                       <div
                         key={act.id}
-                        className="group relative p-4 rounded-xl border border-slate-200 dark:border-slate-850 bg-white dark:bg-slate-900/30 hover:bg-slate-50 dark:hover:bg-slate-900/60 hover:border-slate-300 dark:hover:border-slate-800 transition-all duration-150 flex items-start justify-between gap-4 shadow-sm"
+                        className="group relative p-4 rounded-xl border border-slate-200 dark:border-slate-900 bg-white dark:bg-slate-900/30 hover:bg-slate-50 dark:hover:bg-slate-900/60 hover:border-slate-300 dark:hover:border-slate-800 transition-all duration-150 flex items-start justify-between gap-4 shadow-sm"
                       >
                         <div className="flex items-start space-x-3.5">
                           <div

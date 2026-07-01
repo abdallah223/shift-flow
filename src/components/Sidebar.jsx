@@ -3,13 +3,27 @@ import { useApp } from "../context/AppContext.jsx";
 import DynamicIcon from "./icons/DynamicIcon.jsx";
 
 export default function Sidebar() {
-  const { currentView, setCurrentView, activeActivity, theme, toggleTheme, setShowCommandPalette } = useApp();
+  const {
+    currentView,
+    setCurrentView,
+    activeActivity,
+    theme,
+    toggleTheme,
+    setShowCommandPalette,
+  } = useApp();
 
   const menuItems = [
     { id: "dashboard", label: "Dashboard", icon: "layout-dashboard" },
     { id: "timeline", label: "Timeline-First", icon: "activity" },
     { id: "calendar", label: "Calendar Grid", icon: "calendar" },
     { id: "reports", label: "Executive Reports", icon: "bar-chart-3" },
+    {
+      id: "operations-reports",
+      label: "Operations Reports",
+      icon: "file-text",
+    },
+    { id: "tasks", label: "Tasks & Focus", icon: "check-square" },
+    { id: "productivity", label: "Productivity Analysis", icon: "activity" },
     { id: "export", label: "Data Portability", icon: "download" },
     { id: "settings", label: "Workspace Controls", icon: "sliders" },
   ];
@@ -19,7 +33,9 @@ export default function Sidebar() {
       <div className="space-y-6">
         <div className="flex items-center space-x-3 px-1">
           <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-brand-600 to-emerald-400 flex items-center justify-center shadow-lg shadow-brand-500/20">
-            <span className="font-bold text-white tracking-wider text-sm font-mono">CC</span>
+            <span className="font-bold text-white tracking-wider text-sm font-mono">
+              CC
+            </span>
           </div>
           <div>
             <h1 className="text-sm font-bold tracking-tight text-slate-880 dark:text-slate-100 leading-none">
@@ -84,7 +100,9 @@ export default function Sidebar() {
           >
             <DynamicIcon name={theme === "dark" ? "sun" : "moon"} />
           </button>
-          <span className="text-[11px] text-slate-500 font-mono font-medium">Local-First Engine</span>
+          <span className="text-[11px] text-slate-500 font-mono font-medium">
+            Local-First Engine
+          </span>
         </div>
       </div>
     </aside>

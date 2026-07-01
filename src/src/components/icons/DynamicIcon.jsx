@@ -314,6 +314,14 @@ export default function DynamicIcon({ name, className = "w-4 h-4", ...props }) {
           <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
         </svg>
       );
+    case "menu":
+      return (
+        <svg {...baseProps}>
+          <line x1="3" y1="6" x2="21" y2="6" />
+          <line x1="3" y1="12" x2="21" y2="12" />
+          <line x1="3" y1="18" x2="21" y2="18" />
+        </svg>
+      );
     default:
       return (
         <svg {...baseProps}>

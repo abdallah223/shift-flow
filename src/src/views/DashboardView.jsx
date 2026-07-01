@@ -3,6 +3,7 @@ import Chart from "chart.js/auto";
 import { useApp } from "../context/AppContext.jsx";
 import DynamicIcon from "../components/icons/DynamicIcon.jsx";
 import CurrentActivityCard from "../components/CurrentActivityCard.jsx";
+import { isNonWorkCategory } from "../utils/activityHelpers.js";
 
 const getLocalDateString = (date) => {
   const year = date.getFullYear();
@@ -29,7 +30,6 @@ export default function DashboardView() {
   const [datePreset, setDatePreset] = useState("all");
   const [startDate, setStartDate] = useState(getLocalDateString(new Date()));
   const [endDate, setEndDate] = useState(getLocalDateString(new Date()));
-  const [activeReportTab, setActiveReportTab] = useState("leaves");
   const dailyChartRef = useRef(null);
   const categoryChartRef = useRef(null);
   const dailyChartInstanceRef = useRef(null);
@@ -174,7 +174,7 @@ export default function DashboardView() {
     );
     const productiveMinutes = filteredActivities.reduce((acc, curr) => {
       const duration = Number(curr.duration) || 0;
-      return acc + (curr.category === "Break / Lunch" ? 0 : duration);
+      return acc + (isNonWorkCategory(curr.category) ? 0 : duration);
     }, 0);
     const focusRatio =
       totalMinutes > 0
@@ -226,114 +226,17 @@ export default function DashboardView() {
         (Number(activity.duration) || 0);
     });
 
+    const sortedDailyKeys = Object.keys(dailyMap).sort((a, b) =>
+      a.localeCompare(b),
+    );
+
     return {
-      dailyLabels: Object.keys(dailyMap).sort((a, b) => a.localeCompare(b)),
-      dailyValues: Object.values(dailyMap).sort((a, b) => a - b),
+      dailyLabels: sortedDailyKeys,
+      dailyValues: sortedDailyKeys.map((key) => dailyMap[key]),
       categoryLabels: Object.keys(categoryMap),
       categoryValues: Object.values(categoryMap),
     };
   }, [filteredActivities]);
-
-  const tabSummary = useMemo(() => {
-    const dayMap = {};
-    const leaveEntries = [];
-
-    filteredActivities.forEach((activity) => {
-      const dateKey = new Date(activity.startTime).toISOString().slice(0, 10);
-      const duration = Number(activity.duration) || 0;
-      const isLeave = /leave|vacation|vacay|sick|holiday|off/i.test(
-        activity.category || "",
-      );
-
-      if (!dayMap[dateKey]) {
-        dayMap[dateKey] = {
-          date: dateKey,
-          minutes: 0,
-          workMinutes: 0,
-          leaveMinutes: 0,
-          segments: 0,
-          categories: [],
-        };
-      }
-
-      dayMap[dateKey].minutes += duration;
-      dayMap[dateKey].segments += 1;
-
-      if (isLeave) {
-        dayMap[dateKey].leaveMinutes += duration;
-        leaveEntries.push({
-          date: dateKey,
-          title: activity.title,
-          category: activity.category,
-          duration,
-        });
-      } else {
-        dayMap[dateKey].workMinutes += duration;
-      }
-
-      if (!dayMap[dateKey].categories.includes(activity.category)) {
-        dayMap[dateKey].categories.push(activity.category);
-      }
-    });
-
-    const days = Object.values(dayMap)
-      .sort((a, b) => a.date.localeCompare(b.date))
-      .map((day) => ({
-        ...day,
-        workHours: (day.workMinutes / 60).toFixed(1),
-        leaveHours: (day.leaveMinutes / 60).toFixed(1),
-        hours: (day.minutes / 60).toFixed(1),
-      }));
-
-    const workdays = days.filter((day) => day.workMinutes > 0).length;
-    const leaveDays = days.filter((day) => day.leaveMinutes > 0).length;
-    const avgHours =
-      days.length > 0
-        ? (
-            days.reduce((sum, day) => sum + day.minutes, 0) /
-            days.length /
-            60
-          ).toFixed(1)
-        : "0.0";
-
-    return {
-      days,
-      leaveEntries,
-      workdays,
-      leaveDays,
-      avgHours,
-      totalLeaveMinutes: leaveEntries.reduce(
-        (sum, entry) => sum + entry.duration,
-        0,
-      ),
-      totalWorkMinutes: days.reduce((sum, day) => sum + day.workMinutes, 0),
-    };
-  }, [filteredActivities]);
-
-  const exportTabReport = (tabName) => {
-    const payload = {
-      exportedAt: new Date().toISOString(),
-      range: getRangeLabel(),
-      tab: tabName,
-      summary: {
-        totalWorkMinutes: tabSummary.totalWorkMinutes,
-        totalLeaveMinutes: tabSummary.totalLeaveMinutes,
-        workdays: tabSummary.workdays,
-        leaveDays: tabSummary.leaveDays,
-        averageHoursPerDay: tabSummary.avgHours,
-      },
-      days: tabSummary.days,
-      leaves: tabSummary.leaveEntries,
-    };
-
-    const blob = new Blob([JSON.stringify(payload, null, 2)], {
-      type: "application/json",
-    });
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = `ShiftFlow_${tabName.replace(/\s+/g, "_")}_Report_${new Date().toISOString().slice(0, 10)}.json`;
-    link.click();
-  };
 
   const getRangeLabel = () => {
     if (datePreset === "all") return "All Time";
@@ -442,7 +345,7 @@ export default function DashboardView() {
     <div className="space-y-6 animate-fadeIn">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold tracking-tight text-slate-850 dark:text-slate-100">
+          <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
             Operational Command Center
           </h1>
           <p className="text-xs text-slate-500 dark:text-slate-400">
@@ -520,7 +423,7 @@ export default function DashboardView() {
             <span className="text-[10px] text-slate-500 dark:text-slate-500 font-bold uppercase tracking-widest">
               Shift Completion Ratio
             </span>
-            <h3 className="text-2xl font-bold text-slate-850 dark:text-slate-100 mt-1">
+            <h3 className="text-2xl font-bold text-slate-900 dark:text-slate-100 mt-1">
               {todayStats.hours}{" "}
               <span className="text-xs font-normal text-slate-500">
                 / {workHoursGoal} hrs
@@ -548,7 +451,7 @@ export default function DashboardView() {
             <span className="text-[10px] text-slate-500 dark:text-slate-500 font-bold uppercase tracking-widest">
               Active Shift Events
             </span>
-            <h3 className="text-2xl font-bold text-slate-850 dark:text-slate-100 mt-1">
+            <h3 className="text-2xl font-bold text-slate-900 dark:text-slate-100 mt-1">
               {todayStats.count} segments
             </h3>
           </div>
@@ -565,7 +468,7 @@ export default function DashboardView() {
             <span className="text-[10px] text-slate-500 dark:text-slate-500 font-bold uppercase tracking-widest">
               Current Status
             </span>
-            <h3 className="text-lg font-bold text-slate-850 dark:text-slate-100 mt-1 truncate">
+            <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100 mt-1 truncate">
               {activeActivity ? "In Progress" : "Idle / Break"}
             </h3>
             <div className="flex items-center space-x-1.5 mt-1">
@@ -773,7 +676,7 @@ export default function DashboardView() {
                   key={i}
                   className="h-full rounded-full transition-all"
                   style={{
-                    width: `${(data.mins / total) * 100}%`,
+                    width: `${total > 0 ? (data.mins / total) * 100 : 0}%`,
                     background: data.color,
                   }}
                   title={`${name}: ${data.mins}m`}
@@ -825,7 +728,7 @@ export default function DashboardView() {
                     fav.notes,
                   )
                 }
-                className="p-3 rounded-xl border border-slate-200 dark:border-slate-800/80 bg-white dark:bg-slate-900/40 hover:bg-slate-100 dark:hover:bg-slate-850 hover:border-slate-300 dark:hover:border-slate-700 text-left transition-all duration-150 flex items-center justify-between group"
+                className="p-3 rounded-xl border border-slate-200 dark:border-slate-800/80 bg-white dark:bg-slate-900/40 hover:bg-slate-100 dark:hover:bg-slate-900 hover:border-slate-300 dark:hover:border-slate-700 text-left transition-all duration-150 flex items-center justify-between group"
               >
                 <div className="truncate mr-2">
                   <h4 className="text-xs font-semibold text-slate-800 dark:text-slate-200 group-hover:text-slate-900 dark:group-hover:text-slate-100 truncate">

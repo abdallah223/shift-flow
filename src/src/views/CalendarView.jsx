@@ -63,7 +63,7 @@ export default function CalendarView() {
   return (
     <div className="space-y-6 animate-fadeIn">
       <div>
-        <h1 className="text-xl font-bold tracking-tight text-slate-850 dark:text-slate-100">
+        <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
           Work Intensity Heatmap
         </h1>
         <p className="text-xs text-slate-500 dark:text-slate-400">
@@ -134,7 +134,7 @@ export default function CalendarView() {
               const hours = minutes / 60;
 
               let heatBg =
-                "bg-slate-50 dark:bg-slate-900/30 border-slate-200 dark:border-slate-850 text-slate-700 dark:text-slate-400";
+                "bg-slate-50 dark:bg-slate-900/30 border-slate-200 dark:border-slate-900 text-slate-700 dark:text-slate-400";
               if (hours > 0 && hours <= 2)
                 heatBg =
                   "bg-brand-50 dark:bg-brand-500/15 text-brand-700 dark:text-brand-300 border-brand-200 dark:border-brand-500/25";

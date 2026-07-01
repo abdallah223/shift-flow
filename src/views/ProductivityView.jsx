@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Chart from "chart.js/auto";
 import { useApp } from "../context/AppContext.jsx";
+import DynamicIcon from "../components/icons/DynamicIcon.jsx";
 
 const getLocalDateString = (date) => {
   const year = date.getFullYear();
@@ -14,12 +15,14 @@ const parseDateInput = (value) => {
   return new Date(year, month - 1, day);
 };
 
-export default function ReportsView() {
-  const { activities, theme } = useApp();
-  const categoryCanvasRef = useRef(null);
-  const projectCanvasRef = useRef(null);
+export default function ProductivityView() {
+  const { activities, categories, favorites, templates, theme } = useApp();
+  const dailyChartRef = useRef(null);
   const categoryChartRef = useRef(null);
-  const projectChartRef = useRef(null);
+  const focusChartRef = useRef(null);
+  const dailyChartInstanceRef = useRef(null);
+  const categoryChartInstanceRef = useRef(null);
+  const focusChartInstanceRef = useRef(null);
 
   const [datePreset, setDatePreset] = useState("today");
   const [startDate, setStartDate] = useState(getLocalDateString(new Date()));
@@ -127,71 +130,111 @@ export default function ReportsView() {
   const analytics = useMemo(() => {
     const categoryDist = {};
     const projectDist = {};
-    let totalWorkMinutes = 0;
-    let totalBreakMinutes = 0;
-    let longestActivity = { title: "No entries", duration: 0, category: "—" };
+    const dailyDist = {};
+    const hourCounts = Array(24).fill(0);
+    let productiveMinutes = 0;
+    let breakMinutes = 0;
+    let totalMinutes = 0;
+    let longest = { title: "No entries", duration: 0 };
     let activeDays = new Set();
+    let firstStart = null;
+    let lastEnd = null;
 
     filteredActivities.forEach((act) => {
       const duration = Number(act.duration) || 0;
+      totalMinutes += duration;
+      const dateKey = new Date(act.startTime).toISOString().slice(0, 10);
+      dailyDist[dateKey] = (dailyDist[dateKey] || 0) + duration;
+      activeDays.add(dateKey);
+
+      const start = new Date(act.startTime);
+      const hour = start.getHours();
+      hourCounts[hour] += duration;
+
+      if (!firstStart || start < firstStart) firstStart = start;
+      const end = act.endTime ? new Date(act.endTime) : start;
+      if (!lastEnd || end > lastEnd) lastEnd = end;
+
       if (act.category === "Break / Lunch") {
-        totalBreakMinutes += duration;
+        breakMinutes += duration;
       } else {
-        totalWorkMinutes += duration;
+        productiveMinutes += duration;
       }
+
       categoryDist[act.category] = (categoryDist[act.category] || 0) + duration;
       projectDist[act.project] = (projectDist[act.project] || 0) + duration;
 
-      const dayKey = new Date(act.startTime).toDateString();
-      activeDays.add(dayKey);
-
-      if (duration > longestActivity.duration) {
-        longestActivity = {
-          title: act.title,
-          duration,
-          category: act.category,
-        };
+      if (duration > longest.duration) {
+        longest = { title: act.title, duration };
       }
     });
 
-    const categories = Object.entries(categoryDist).map(([name, val]) => ({
-      name,
-      val,
-    }));
-    const projects = Object.entries(projectDist).map(([name, val]) => ({
-      name,
-      val,
-    }));
-    const topCategory = categories.sort((a, b) => b.val - a.val)[0] || {
-      name: "No data",
-      val: 0,
-    };
-    const topProject = projects.sort((a, b) => b.val - a.val)[0] || {
-      name: "No data",
-      val: 0,
-    };
-    const totalMinutes = totalWorkMinutes + totalBreakMinutes;
-    const productivePct =
+    const dailyData = Object.entries(dailyDist)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, minutes]) => ({ date, minutes }));
+
+    const peakHour = hourCounts.reduce(
+      (best, value, idx) => (value > best.value ? { value, idx } : best),
+      { value: -1, idx: 0 },
+    );
+    const focusRatio =
       totalMinutes > 0
-        ? Math.round((totalWorkMinutes / totalMinutes) * 100)
+        ? Math.round((productiveMinutes / totalMinutes) * 100)
         : 0;
+    const avgSession =
+      filteredActivities.length > 0
+        ? Math.round(totalMinutes / filteredActivities.length)
+        : 0;
+    const topCategory = Object.entries(categoryDist).sort(
+      (a, b) => b[1] - a[1],
+    )[0] || ["No data", 0];
+    const topProject = Object.entries(projectDist).sort(
+      (a, b) => b[1] - a[1],
+    )[0] || ["No data", 0];
 
     return {
-      categories,
-      projects,
       totalHours: (totalMinutes / 60).toFixed(1),
-      workHours: (totalWorkMinutes / 60).toFixed(1),
-      breakHours: (totalBreakMinutes / 60).toFixed(1),
-      activityCount: filteredActivities.length,
-      averageSessionMinutes:
-        filteredActivities.length > 0
-          ? Math.round(totalMinutes / filteredActivities.length)
-          : 0,
-      longestActivity,
-      topCategory,
-      topProject,
-      productivePct,
+      productiveHours: (productiveMinutes / 60).toFixed(1),
+      breakHours: (breakMinutes / 60).toFixed(1),
+      focusRatio,
+      avgSession,
       activeDays: activeDays.size,
+      peakHour: `${String(peakHour.idx).padStart(2, "0")}:00`,
+      longest,
+      topCategory: { name: topCategory[0], minutes: topCategory[1] },
+      topProject: { name: topProject[0], minutes: topProject[1] },
+      categories: Object.entries(categoryDist).map(([name, minutes]) => ({
+        name,
+        minutes,
+      })),
+      dailyData,
+      operationalWindow:
+        firstStart && lastEnd
+          ? `${firstStart.toLocaleDateString()} → ${lastEnd.toLocaleDateString()}`
+          : "No window",
+      categoryCount: Object.keys(categoryDist).length,
+      projectCount: Object.keys(projectDist).length,
+      activeCategories: Object.keys(categoryDist).length,
+      activeProjects: Object.keys(projectDist).length,
+      categoryCoverage:
+        Object.keys(categoryDist).length > 0
+          ? Math.round(
+              (Object.keys(categoryDist).length /
+                Math.max(Object.keys(categoryDist).length, 1)) *
+                100,
+            )
+          : 0,
+      systemHealth:
+        focusRatio >= 70
+          ? "High focus"
+          : focusRatio >= 45
+            ? "Balanced"
+            : "Needs reset",
+      workspaceSignals: [
+        `Tracked ${filteredActivities.length} activity segments`,
+        `Top category: ${topCategory[0]}`,
+        `Peak working hour: ${String(peakHour.idx).padStart(2, "0")}:00`,
+      ],
     };
   }, [filteredActivities]);
 
@@ -215,22 +258,92 @@ export default function ReportsView() {
     setEndDate(getLocalDateString(new Date()));
   };
 
+  const exportAnalysis = () => {
+    const payload = {
+      generatedAt: new Date().toISOString(),
+      range: getRangeLabel(),
+      summary: {
+        totalHours: analytics.totalHours,
+        productiveHours: analytics.productiveHours,
+        breakHours: analytics.breakHours,
+        focusRatio: analytics.focusRatio,
+        averageSessionMinutes: analytics.avgSession,
+        activeDays: analytics.activeDays,
+        peakHour: analytics.peakHour,
+        topCategory: analytics.topCategory.name,
+        topProject: analytics.topProject.name,
+        operationalWindow: analytics.operationalWindow,
+        categoryCount: analytics.categoryCount,
+        projectCount: analytics.projectCount,
+        systemHealth: analytics.systemHealth,
+      },
+      categories: analytics.categories,
+      dailyData: analytics.dailyData,
+      workspace: {
+        activities: filteredActivities,
+        categories,
+        favorites,
+        templates,
+      },
+    };
+
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {
+      type: "application/json",
+    });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `ShiftFlow_Productivity_Analysis_${new Date().toISOString().slice(0, 10)}.json`;
+    link.click();
+  };
+
   useEffect(() => {
     const textColor = theme === "dark" ? "#94a3b8" : "#475569";
     const gridColor =
       theme === "dark" ? "rgba(255, 255, 255, 0.05)" : "rgba(0, 0, 0, 0.05)";
 
-    if (categoryCanvasRef.current && analytics.categories.length > 0) {
-      if (categoryChartRef.current) categoryChartRef.current.destroy();
+    if (dailyChartRef.current) {
+      if (dailyChartInstanceRef.current)
+        dailyChartInstanceRef.current.destroy();
+      const ctx = dailyChartRef.current.getContext("2d");
+      dailyChartInstanceRef.current = new Chart(ctx, {
+        type: "line",
+        data: {
+          labels: analytics.dailyData.map((d) => d.date),
+          datasets: [
+            {
+              label: "Minutes",
+              data: analytics.dailyData.map((d) => d.minutes),
+              borderColor: "#6366f1",
+              backgroundColor: "rgba(99, 102, 241, 0.14)",
+              tension: 0.3,
+              fill: true,
+              pointRadius: 4,
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            y: { grid: { color: gridColor }, ticks: { color: textColor } },
+            x: { grid: { display: false }, ticks: { color: textColor } },
+          },
+          plugins: { legend: { display: false } },
+        },
+      });
+    }
 
-      const ctx = categoryCanvasRef.current.getContext("2d");
-      categoryChartRef.current = new Chart(ctx, {
+    if (categoryChartRef.current) {
+      if (categoryChartInstanceRef.current)
+        categoryChartInstanceRef.current.destroy();
+      const ctx = categoryChartRef.current.getContext("2d");
+      categoryChartInstanceRef.current = new Chart(ctx, {
         type: "doughnut",
         data: {
           labels: analytics.categories.map((c) => c.name),
           datasets: [
             {
-              data: analytics.categories.map((c) => c.val),
+              data: analytics.categories.map((c) => c.minutes),
               backgroundColor: [
                 "#6366f1",
                 "#f43f5e",
@@ -239,7 +352,6 @@ export default function ReportsView() {
                 "#ec4899",
                 "#eab308",
                 "#14b8a6",
-                "#3b82f6",
               ],
               borderWidth: 0,
             },
@@ -258,19 +370,22 @@ export default function ReportsView() {
       });
     }
 
-    if (projectCanvasRef.current && analytics.projects.length > 0) {
-      if (projectChartRef.current) projectChartRef.current.destroy();
-
-      const ctx = projectCanvasRef.current.getContext("2d");
-      projectChartRef.current = new Chart(ctx, {
+    if (focusChartRef.current) {
+      if (focusChartInstanceRef.current)
+        focusChartInstanceRef.current.destroy();
+      const ctx = focusChartRef.current.getContext("2d");
+      focusChartInstanceRef.current = new Chart(ctx, {
         type: "bar",
         data: {
-          labels: analytics.projects.map((p) => p.name),
+          labels: ["Productive", "Break"],
           datasets: [
             {
-              label: "Minutes allocated",
-              data: analytics.projects.map((p) => p.val),
-              backgroundColor: "#6366f1",
+              label: "Minutes",
+              data: [
+                Number(analytics.productiveHours) * 60 || 0,
+                Number(analytics.breakHours) * 60 || 0,
+              ],
+              backgroundColor: ["#10b981", "#f59e0b"],
               borderRadius: 6,
             },
           ],
@@ -288,21 +403,35 @@ export default function ReportsView() {
     }
 
     return () => {
-      if (categoryChartRef.current) categoryChartRef.current.destroy();
-      if (projectChartRef.current) projectChartRef.current.destroy();
+      if (dailyChartInstanceRef.current)
+        dailyChartInstanceRef.current.destroy();
+      if (categoryChartInstanceRef.current)
+        categoryChartInstanceRef.current.destroy();
+      if (focusChartInstanceRef.current)
+        focusChartInstanceRef.current.destroy();
     };
   }, [analytics, theme]);
 
   return (
     <div className="space-y-6 animate-fadeIn">
-      <div>
-        <h1 className="text-xl font-bold tracking-tight text-slate-850 dark:text-slate-100">
-          Executive Shift Analytics
-        </h1>
-        <p className="text-xs text-slate-500 dark:text-slate-400">
-          Deep aggregated allocation metrics, productivity charts, and breakdown
-          summaries.
-        </p>
+      <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+        <div>
+          <h1 className="text-xl font-bold tracking-tight text-slate-850 dark:text-slate-100">
+            Productivity Analysis
+          </h1>
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Systems-style operational review of throughput, focus quality, and
+            work distribution.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={exportAnalysis}
+          className="px-3.5 py-2 rounded-lg bg-brand-600 hover:bg-brand-500 font-semibold text-xs text-white flex items-center space-x-1.5 shadow-md shadow-brand-500/10 transition-all"
+        >
+          <DynamicIcon name="download" className="w-4 h-4" />
+          <span>Export Analysis</span>
+        </button>
       </div>
 
       <div className="rounded-2xl border border-slate-200/80 dark:border-slate-800/80 bg-white/70 dark:bg-slate-900/40 p-4 shadow-sm space-y-3">
@@ -357,7 +486,7 @@ export default function ReportsView() {
             {getRangeLabel()}
           </span>
           <span className="text-slate-500 dark:text-slate-400">
-            {analytics.activityCount} segments • {analytics.activeDays} active
+            {filteredActivities.length} segments • {analytics.activeDays} active
             day{analytics.activeDays === 1 ? "" : "s"}
           </span>
           <button
@@ -370,10 +499,10 @@ export default function ReportsView() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="p-4 rounded-xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-900 shadow-sm">
           <span className="text-[10px] text-slate-500 dark:text-slate-500 font-bold uppercase tracking-wider">
-            Accumulated Hours
+            Throughput
           </span>
           <h3 className="text-xl font-bold text-slate-800 dark:text-slate-250 mt-1">
             {analytics.totalHours} hrs
@@ -381,80 +510,108 @@ export default function ReportsView() {
         </div>
         <div className="p-4 rounded-xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-900 shadow-sm">
           <span className="text-[10px] text-slate-500 dark:text-slate-500 font-bold uppercase tracking-wider">
-            Productive Work Delivery
+            Focus Index
           </span>
           <h3 className="text-xl font-bold text-emerald-600 dark:text-emerald-400 mt-1">
-            {analytics.workHours} hrs
+            {analytics.focusRatio}%
           </h3>
         </div>
         <div className="p-4 rounded-xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-900 shadow-sm">
           <span className="text-[10px] text-slate-500 dark:text-slate-500 font-bold uppercase tracking-wider">
-            Break & Idle allocation
+            Avg. Session
           </span>
-          <h3 className="text-xl font-bold text-slate-600 dark:text-slate-400 mt-1">
-            {analytics.breakHours} hrs
+          <h3 className="text-xl font-bold text-slate-800 dark:text-slate-250 mt-1">
+            {analytics.avgSession} mins
+          </h3>
+        </div>
+        <div className="p-4 rounded-xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-900 shadow-sm">
+          <span className="text-[10px] text-slate-500 dark:text-slate-500 font-bold uppercase tracking-wider">
+            Peak Window
+          </span>
+          <h3 className="text-xl font-bold text-brand-600 dark:text-brand-400 mt-1">
+            {analytics.peakHour}
           </h3>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="p-4 rounded-xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-900 shadow-sm">
-          <span className="text-[10px] text-slate-500 dark:text-slate-500 font-bold uppercase tracking-wider">
-            Focus Ratio
-          </span>
-          <h3 className="text-xl font-bold text-brand-600 dark:text-brand-400 mt-1">
-            {analytics.productivePct}%
-          </h3>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="p-5 rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-900 shadow-sm lg:col-span-2">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300">
+              Daily Throughput Trend
+            </h3>
+            <span className="text-[10px] uppercase tracking-[0.2em] text-slate-500">
+              System load
+            </span>
+          </div>
+          <div className="relative h-64">
+            <canvas ref={dailyChartRef} />
+          </div>
         </div>
-        <div className="p-4 rounded-xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-900 shadow-sm">
-          <span className="text-[10px] text-slate-500 dark:text-slate-500 font-bold uppercase tracking-wider">
-            Avg. Session Length
-          </span>
-          <h3 className="text-xl font-bold text-slate-800 dark:text-slate-250 mt-1">
-            {analytics.averageSessionMinutes} mins
-          </h3>
-        </div>
-        <div className="p-4 rounded-xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-900 shadow-sm">
-          <span className="text-[10px] text-slate-500 dark:text-slate-500 font-bold uppercase tracking-wider">
-            Longest Session
-          </span>
-          <h3 className="text-sm font-bold text-slate-800 dark:text-slate-250 mt-1">
-            {analytics.longestActivity.title === "No entries"
-              ? "No entries"
-              : `${analytics.longestActivity.title} (${analytics.longestActivity.duration}m)`}
-          </h3>
+
+        <div className="p-5 rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-900 shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300">
+              Focus Balance
+            </h3>
+            <span className="text-[10px] uppercase tracking-[0.2em] text-slate-500">
+              Capacity mix
+            </span>
+          </div>
+          <div className="relative h-64">
+            <canvas ref={focusChartRef} />
+          </div>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="p-5 rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-900 shadow-sm flex flex-col justify-between">
-          <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300 mb-4">
-            Category Distribution (Minutes)
-          </h3>
-          <div className="relative h-64 flex items-center justify-center">
-            {analytics.categories.length > 0 ? (
-              <canvas ref={categoryCanvasRef} />
-            ) : (
-              <p className="text-xs text-slate-500 italic">
-                Not enough visual timeline telemetry to populate breakdown
-                charts.
-              </p>
-            )}
+        <div className="p-5 rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-900 shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300">
+              Category Load Distribution
+            </h3>
+            <span className="text-[10px] uppercase tracking-[0.2em] text-slate-500">
+              Operational mix
+            </span>
+          </div>
+          <div className="relative h-64">
+            <canvas ref={categoryChartRef} />
           </div>
         </div>
 
-        <div className="p-5 rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-900 shadow-sm flex flex-col justify-between">
-          <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300 mb-4">
-            Project Distribution (Minutes)
+        <div className="p-5 rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-900 shadow-sm">
+          <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300">
+            Workspace Intelligence
           </h3>
-          <div className="relative h-64 flex items-center justify-center">
-            {analytics.projects.length > 0 ? (
-              <canvas ref={projectCanvasRef} />
-            ) : (
-              <p className="text-xs text-slate-500 italic">
-                No project allocations logged yet.
+          <div className="mt-4 space-y-3 text-sm text-slate-600 dark:text-slate-400">
+            <div className="rounded-lg border border-slate-200 dark:border-slate-800 p-3">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">
+                Operational window
               </p>
-            )}
+              <p className="mt-1 font-semibold text-slate-800 dark:text-slate-200">
+                {analytics.operationalWindow}
+              </p>
+            </div>
+            <div className="rounded-lg border border-slate-200 dark:border-slate-800 p-3">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">
+                System health
+              </p>
+              <p className="mt-1 font-semibold text-slate-800 dark:text-slate-200">
+                {analytics.systemHealth}
+              </p>
+            </div>
+            <div className="rounded-lg border border-slate-200 dark:border-slate-800 p-3">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">
+                Signals
+              </p>
+              <ul className="mt-1 space-y-1">
+                {analytics.workspaceSignals.map((signal) => (
+                  <li key={signal} className="leading-relaxed">
+                    • {signal}
+                  </li>
+                ))}
+              </ul>
+            </div>
           </div>
         </div>
       </div>
@@ -462,12 +619,12 @@ export default function ReportsView() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="p-5 rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-900 shadow-sm">
           <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300">
-            Executive Insights
+            Operational Diagnostics
           </h3>
           <div className="mt-4 space-y-3 text-sm text-slate-600 dark:text-slate-400">
             <div className="rounded-lg border border-slate-200 dark:border-slate-800 p-3">
               <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">
-                Top category
+                Primary load
               </p>
               <p className="mt-1 font-semibold text-slate-800 dark:text-slate-200">
                 {analytics.topCategory.name}
@@ -475,7 +632,7 @@ export default function ReportsView() {
             </div>
             <div className="rounded-lg border border-slate-200 dark:border-slate-800 p-3">
               <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">
-                Top project
+                Primary project
               </p>
               <p className="mt-1 font-semibold text-slate-800 dark:text-slate-200">
                 {analytics.topProject.name}
@@ -483,12 +640,10 @@ export default function ReportsView() {
             </div>
             <div className="rounded-lg border border-slate-200 dark:border-slate-800 p-3">
               <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">
-                Readout
+                Longest session
               </p>
-              <p className="mt-1 leading-relaxed">
-                This range shows {analytics.productivePct}% productive time
-                across {analytics.activityCount} logged segments with the
-                longest session centered on {analytics.longestActivity.title}.
+              <p className="mt-1 font-semibold text-slate-800 dark:text-slate-200">
+                {analytics.longest.title} ({analytics.longest.duration}m)
               </p>
             </div>
           </div>
@@ -496,28 +651,28 @@ export default function ReportsView() {
 
         <div className="p-5 rounded-2xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-900 shadow-sm">
           <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300">
-            Allocation Snapshot
+            Performance Notes
           </h3>
-          <div className="mt-4 space-y-2 text-sm">
-            {analytics.categories.length > 0 ? (
-              analytics.categories.slice(0, 5).map((item) => (
-                <div
-                  key={item.name}
-                  className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-800 px-3 py-2"
-                >
-                  <span className="text-slate-600 dark:text-slate-400">
-                    {item.name}
-                  </span>
-                  <span className="font-semibold text-slate-800 dark:text-slate-200">
-                    {item.val} mins
-                  </span>
-                </div>
-              ))
-            ) : (
-              <p className="text-xs text-slate-500 italic">
-                No category data for the selected period.
+          <div className="mt-4 space-y-2 text-sm text-slate-600 dark:text-slate-400">
+            <div className="rounded-lg border border-slate-200 dark:border-slate-800 p-3">
+              <p className="font-semibold text-slate-800 dark:text-slate-200">
+                Capacity outlook
               </p>
-            )}
+              <p className="mt-1 leading-relaxed">
+                Focus performance is running at {analytics.focusRatio}% against{" "}
+                {analytics.totalHours} hours of recorded system activity.
+              </p>
+            </div>
+            <div className="rounded-lg border border-slate-200 dark:border-slate-800 p-3">
+              <p className="font-semibold text-slate-800 dark:text-slate-200">
+                Operational recommendation
+              </p>
+              <p className="mt-1 leading-relaxed">
+                The largest load is centered on {analytics.topCategory.name}.
+                Consider protecting {analytics.peakHour} as a priority window
+                for high-value delivery.
+              </p>
+            </div>
           </div>
         </div>
       </div>

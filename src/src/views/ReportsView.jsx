@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Chart from "chart.js/auto";
 import { useApp } from "../context/AppContext.jsx";
+import { isNonWorkCategory } from "../utils/activityHelpers.js";
 
 const getLocalDateString = (date) => {
   const year = date.getFullYear();
@@ -134,7 +135,7 @@ export default function ReportsView() {
 
     filteredActivities.forEach((act) => {
       const duration = Number(act.duration) || 0;
-      if (act.category === "Break / Lunch") {
+      if (isNonWorkCategory(act.category)) {
         totalBreakMinutes += duration;
       } else {
         totalWorkMinutes += duration;
@@ -296,7 +297,7 @@ export default function ReportsView() {
   return (
     <div className="space-y-6 animate-fadeIn">
       <div>
-        <h1 className="text-xl font-bold tracking-tight text-slate-850 dark:text-slate-100">
+        <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
           Executive Shift Analytics
         </h1>
         <p className="text-xs text-slate-500 dark:text-slate-400">
@@ -375,7 +376,7 @@ export default function ReportsView() {
           <span className="text-[10px] text-slate-500 dark:text-slate-500 font-bold uppercase tracking-wider">
             Accumulated Hours
           </span>
-          <h3 className="text-xl font-bold text-slate-800 dark:text-slate-250 mt-1">
+          <h3 className="text-xl font-bold text-slate-800 dark:text-slate-200 mt-1">
             {analytics.totalHours} hrs
           </h3>
         </div>
@@ -410,7 +411,7 @@ export default function ReportsView() {
           <span className="text-[10px] text-slate-500 dark:text-slate-500 font-bold uppercase tracking-wider">
             Avg. Session Length
           </span>
-          <h3 className="text-xl font-bold text-slate-800 dark:text-slate-250 mt-1">
+          <h3 className="text-xl font-bold text-slate-800 dark:text-slate-200 mt-1">
             {analytics.averageSessionMinutes} mins
           </h3>
         </div>
@@ -418,7 +419,7 @@ export default function ReportsView() {
           <span className="text-[10px] text-slate-500 dark:text-slate-500 font-bold uppercase tracking-wider">
             Longest Session
           </span>
-          <h3 className="text-sm font-bold text-slate-800 dark:text-slate-250 mt-1">
+          <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 mt-1">
             {analytics.longestActivity.title === "No entries"
               ? "No entries"
               : `${analytics.longestActivity.title} (${analytics.longestActivity.duration}m)`}

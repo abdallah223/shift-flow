@@ -10,6 +10,9 @@ import { DEFAULT_CATEGORIES } from "../data/categories.js";
 
 const AppContext = createContext();
 
+const ACTIVE_ACTIVITY_KEY = "shiftflow_active_activity";
+const SESSION_ALIVE_KEY = "shiftflow_session_alive";
+
 export function AppProvider({ children }) {
   const [currentView, setCurrentView] = useState("dashboard");
   const [theme, setTheme] = useState("dark");
@@ -32,48 +35,104 @@ export function AppProvider({ children }) {
 
   const timerRef = useRef(null);
 
+  // Keep localStorage in sync whenever the active activity or pause state changes
   useEffect(() => {
-    dbInstance.init().then(() => {
-      dbInstance.getAll("categories").then(async (cats) => {
-        if (cats.length === 0) {
-          for (const c of DEFAULT_CATEGORIES) {
-            await dbInstance.put("categories", c);
-          }
-          setCategories(DEFAULT_CATEGORIES);
+    if (activeActivity) {
+      localStorage.setItem(
+        ACTIVE_ACTIVITY_KEY,
+        JSON.stringify({ ...activeActivity, isPaused }),
+      );
+    }
+  }, [activeActivity, isPaused]);
+
+  useEffect(() => {
+    const init = async () => {
+      await dbInstance.init();
+
+      // --- Refresh vs. tab-close detection ---
+      // sessionStorage survives refreshes but is wiped when the tab closes.
+      const isRefresh = sessionStorage.getItem(SESSION_ALIVE_KEY) === "1";
+      sessionStorage.setItem(SESSION_ALIVE_KEY, "1");
+
+      const persistedRaw = localStorage.getItem(ACTIVE_ACTIVITY_KEY);
+
+      if (persistedRaw) {
+        const persisted = JSON.parse(persistedRaw);
+
+        if (isRefresh) {
+          // Page was refreshed — restore the activity and keep the timer running
+          const elapsedSeconds = Math.max(
+            0,
+            Math.floor(
+              (Date.now() - new Date(persisted.startTime).getTime()) / 1000,
+            ),
+          );
+          // Strip the isPaused flag we embedded before restoring
+          const { isPaused: savedPaused, ...activityData } = persisted;
+          setActiveActivity(activityData);
+          setTimerSeconds(elapsedSeconds);
+          setIsPaused(savedPaused || false);
         } else {
-          setCategories(cats);
+          // Tab was closed — stop and save the activity automatically
+          const now = new Date();
+          const start = new Date(persisted.startTime);
+          const elapsedMinutes = Math.max(1, Math.round((now - start) / 60000));
+          const { isPaused: _ip, ...activityData } = persisted;
+          const completedAct = {
+            ...activityData,
+            endTime: now.toISOString(),
+            duration: elapsedMinutes,
+          };
+          await dbInstance.put("activities", completedAct);
+          localStorage.removeItem(ACTIVE_ACTIVITY_KEY);
         }
-      });
+      }
 
-      dbInstance.getAll("activities").then((logs) => {
-        const sorted = logs.sort(
-          (a, b) => new Date(b.startTime) - new Date(a.startTime),
-        );
-        setActivities(sorted);
-      });
+      // Load categories
+      const cats = await dbInstance.getAll("categories");
+      if (cats.length === 0) {
+        for (const c of DEFAULT_CATEGORIES) {
+          await dbInstance.put("categories", c);
+        }
+        setCategories(DEFAULT_CATEGORIES);
+      } else {
+        setCategories(cats);
+      }
 
-      dbInstance.getAll("favorites").then(setFavorites);
-      dbInstance.getAll("templates").then(setTemplates);
-      dbInstance.getAll("tasks").then((savedTasks) => {
-        const sortedTasks = [...savedTasks].sort(
+      // Load activities (may include the newly-saved one from tab-close above)
+      const logs = await dbInstance.getAll("activities");
+      setActivities(
+        logs.sort((a, b) => new Date(b.startTime) - new Date(a.startTime)),
+      );
+
+      const favs = await dbInstance.getAll("favorites");
+      setFavorites(favs);
+
+      const tmps = await dbInstance.getAll("templates");
+      setTemplates(tmps);
+
+      const savedTasks = await dbInstance.getAll("tasks");
+      setTasks(
+        [...savedTasks].sort(
           (a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0),
-        );
-        setTasks(sortedTasks);
-      });
-      dbInstance.getAll("settings").then((settings) => {
-        const themeSetting = settings.find((s) => s.key === "theme");
-        if (themeSetting) {
-          setTheme(themeSetting.value);
-          document.documentElement.className = themeSetting.value;
-        } else {
-          document.documentElement.className = "dark";
-        }
-        const goalSetting = settings.find((s) => s.key === "workHoursGoal");
-        if (goalSetting) {
-          setWorkHoursGoal(Number(goalSetting.value));
-        }
-      });
-    });
+        ),
+      );
+
+      const settings = await dbInstance.getAll("settings");
+      const themeSetting = settings.find((s) => s.key === "theme");
+      if (themeSetting) {
+        setTheme(themeSetting.value);
+        document.documentElement.className = themeSetting.value;
+      } else {
+        document.documentElement.className = "dark";
+      }
+      const goalSetting = settings.find((s) => s.key === "workHoursGoal");
+      if (goalSetting) {
+        setWorkHoursGoal(Number(goalSetting.value));
+      }
+    };
+
+    init();
   }, []);
 
   useEffect(() => {
@@ -130,6 +189,7 @@ export function AppProvider({ children }) {
     setActiveActivity(newAct);
     setTimerSeconds(0);
     setIsPaused(false);
+    // localStorage will be updated by the sync useEffect above
   };
 
   const stopCurrentActivity = async () => {
@@ -156,6 +216,7 @@ export function AppProvider({ children }) {
     setActiveActivity(null);
     setTimerSeconds(0);
     setIsPaused(false);
+    localStorage.removeItem(ACTIVE_ACTIVITY_KEY);
   };
 
   const addManualActivity = async (

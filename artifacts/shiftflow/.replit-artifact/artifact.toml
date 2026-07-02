@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "ShiftFlow"
+version = "1.0.0"
+id = "artifacts/shiftflow"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 21341
+
+[services.development]
+run = "pnpm --filter @workspace/shiftflow run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/shiftflow", "run", "build" ]
+publicDir = "artifacts/shiftflow/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "21341"
+BASE_PATH = "/"

@@ -1,36 +1,41 @@
-# [Project name]
+# ShiftFlow
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+A call center operations tracker that lets supervisors log shift activities, track productivity, and generate reports — all stored locally in the browser via IndexedDB.
 
 ## Run & Operate
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
+- Workflow `artifacts/shiftflow: web` — runs the Vite dev server for the frontend
 - `pnpm run typecheck` — full typecheck across all packages
-- `pnpm run build` — typecheck + build all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Required env: `DATABASE_URL` — Postgres connection string
+- No backend or database required — data is stored in IndexedDB (browser)
 
 ## Stack
 
 - pnpm workspaces, Node.js 24, TypeScript 5.9
-- API: Express 5
-- DB: PostgreSQL + Drizzle ORM
-- Validation: Zod (`zod/v4`), `drizzle-zod`
-- API codegen: Orval (from OpenAPI spec)
-- Build: esbuild (CJS bundle)
+- Frontend: React + Vite (JSX), Tailwind CSS v3 (postcss), chart.js, exceljs, jspdf
+- Storage: IndexedDB via custom `ShiftFlowDatabase` class
+- No backend API or PostgreSQL used
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- `artifacts/shiftflow/src/App.jsx` — root app component (view router)
+- `artifacts/shiftflow/src/context/AppContext.jsx` — global state + IndexedDB integration
+- `artifacts/shiftflow/src/views/` — all page views (Dashboard, Timeline, Calendar, Reports, etc.)
+- `artifacts/shiftflow/src/components/` — sidebar, modals, icons
+- `artifacts/shiftflow/src/db/database.js` — IndexedDB wrapper
+- `artifacts/shiftflow/src/data/categories.js` — default activity categories
+- `artifacts/shiftflow/tailwind.config.js` — Tailwind v3 config with brand colors + fonts
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- Pure client-side app — no Express backend, no Postgres, no codegen. All data persists in IndexedDB.
+- Uses JSX (not TSX) for all components — migrated from Vercel/v0 as-is. TypeScript strict mode not enforced.
+- Tailwind CSS v3 via postcss (NOT @tailwindcss/vite) — the copy script removed the v4 plugin and installed v3.
+- App routing is state-based (`currentView` in AppContext), not URL-based. No React Router or wouter used.
+- chart.js, exceljs, and jspdf are `dependencies` (runtime), not devDependencies.
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+ShiftFlow lets call center supervisors log and categorize shift activities in real time, view a timeline and calendar of their work sessions, generate executive and operations reports, track task completion, analyze productivity trends, and export data to Excel/PDF.
 
 ## User preferences
 
@@ -38,7 +43,9 @@ _Populate as you build — explicit user instructions worth remembering across s
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- Do NOT add `@tailwindcss/vite` — the project uses Tailwind v3 with postcss. The vite.config.ts passes tailwind/autoprefixer via `css.postcss.plugins`.
+- Do NOT run `pnpm dev` at workspace root. Use the workflow `artifacts/shiftflow: web` or `pnpm --filter @workspace/shiftflow run dev`.
+- The app entry point is `src/main.jsx` (JSX, not TSX). The scaffold's `src/main.tsx` and `src/App.tsx` are unused.
 
 ## Pointers
 

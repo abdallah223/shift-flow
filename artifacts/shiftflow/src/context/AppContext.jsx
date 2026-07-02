@@ -45,6 +45,22 @@ export function AppProvider({ children }) {
     }
   }, [activeActivity, isPaused]);
 
+  // Snapshot the exact close timestamp so we know when the timer should freeze
+  useEffect(() => {
+    const handlePageHide = () => {
+      const raw = localStorage.getItem(ACTIVE_ACTIVITY_KEY);
+      if (raw) {
+        const data = JSON.parse(raw);
+        localStorage.setItem(
+          ACTIVE_ACTIVITY_KEY,
+          JSON.stringify({ ...data, closedAt: Date.now() }),
+        );
+      }
+    };
+    window.addEventListener("pagehide", handlePageHide);
+    return () => window.removeEventListener("pagehide", handlePageHide);
+  }, []);
+
   useEffect(() => {
     const init = async () => {
       await dbInstance.init();
@@ -73,11 +89,12 @@ export function AppProvider({ children }) {
           setTimerSeconds(elapsedSeconds);
           setIsPaused(savedPaused || false);
         } else {
-          // Tab was closed — restore the activity but put it in paused state
+          // Tab was closed — restore paused at the exact moment the tab closed
+          const closedAt = persisted.closedAt || Date.now();
           const elapsedSeconds = Math.max(
             0,
             Math.floor(
-              (Date.now() - new Date(persisted.startTime).getTime()) / 1000,
+              (closedAt - new Date(persisted.startTime).getTime()) / 1000,
             ),
           );
           setActiveActivity(activityData);

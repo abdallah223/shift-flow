@@ -35,31 +35,16 @@ export function AppProvider({ children }) {
 
   const timerRef = useRef(null);
 
-  // Keep localStorage in sync whenever the active activity or pause state changes
+  // Keep localStorage in sync every second (timerSeconds changes every tick).
+  // This means the last saved value is always ≤1s stale — no pagehide needed.
   useEffect(() => {
     if (activeActivity) {
       localStorage.setItem(
         ACTIVE_ACTIVITY_KEY,
-        JSON.stringify({ ...activeActivity, isPaused }),
+        JSON.stringify({ ...activeActivity, isPaused, timerSeconds }),
       );
     }
-  }, [activeActivity, isPaused]);
-
-  // Snapshot the exact close timestamp so we know when the timer should freeze
-  useEffect(() => {
-    const handlePageHide = () => {
-      const raw = localStorage.getItem(ACTIVE_ACTIVITY_KEY);
-      if (raw) {
-        const data = JSON.parse(raw);
-        localStorage.setItem(
-          ACTIVE_ACTIVITY_KEY,
-          JSON.stringify({ ...data, closedAt: Date.now() }),
-        );
-      }
-    };
-    window.addEventListener("pagehide", handlePageHide);
-    return () => window.removeEventListener("pagehide", handlePageHide);
-  }, []);
+  }, [activeActivity, isPaused, timerSeconds]);
 
   useEffect(() => {
     const init = async () => {
@@ -89,16 +74,11 @@ export function AppProvider({ children }) {
           setTimerSeconds(elapsedSeconds);
           setIsPaused(savedPaused || false);
         } else {
-          // Tab was closed — restore paused at the exact moment the tab closed
-          const closedAt = persisted.closedAt || Date.now();
-          const elapsedSeconds = Math.max(
-            0,
-            Math.floor(
-              (closedAt - new Date(persisted.startTime).getTime()) / 1000,
-            ),
-          );
+          // Tab was closed — restore paused at the exact second the tab closed.
+          // timerSeconds is saved every tick so it's accurate to within 1 second.
+          const frozenSeconds = persisted.timerSeconds ?? 0;
           setActiveActivity(activityData);
-          setTimerSeconds(elapsedSeconds);
+          setTimerSeconds(frozenSeconds);
           setIsPaused(true);
         }
       }

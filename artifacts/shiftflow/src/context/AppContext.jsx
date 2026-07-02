@@ -59,32 +59,30 @@ export function AppProvider({ children }) {
       if (persistedRaw) {
         const persisted = JSON.parse(persistedRaw);
 
+        const { isPaused: savedPaused, ...activityData } = persisted;
+
         if (isRefresh) {
-          // Page was refreshed — restore the activity and keep the timer running
+          // Page was refreshed — restore and keep the timer running from actual elapsed time
           const elapsedSeconds = Math.max(
             0,
             Math.floor(
               (Date.now() - new Date(persisted.startTime).getTime()) / 1000,
             ),
           );
-          // Strip the isPaused flag we embedded before restoring
-          const { isPaused: savedPaused, ...activityData } = persisted;
           setActiveActivity(activityData);
           setTimerSeconds(elapsedSeconds);
           setIsPaused(savedPaused || false);
         } else {
-          // Tab was closed — stop and save the activity automatically
-          const now = new Date();
-          const start = new Date(persisted.startTime);
-          const elapsedMinutes = Math.max(1, Math.round((now - start) / 60000));
-          const { isPaused: _ip, ...activityData } = persisted;
-          const completedAct = {
-            ...activityData,
-            endTime: now.toISOString(),
-            duration: elapsedMinutes,
-          };
-          await dbInstance.put("activities", completedAct);
-          localStorage.removeItem(ACTIVE_ACTIVITY_KEY);
+          // Tab was closed — restore the activity but put it in paused state
+          const elapsedSeconds = Math.max(
+            0,
+            Math.floor(
+              (Date.now() - new Date(persisted.startTime).getTime()) / 1000,
+            ),
+          );
+          setActiveActivity(activityData);
+          setTimerSeconds(elapsedSeconds);
+          setIsPaused(true);
         }
       }
 

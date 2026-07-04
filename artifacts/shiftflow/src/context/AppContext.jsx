@@ -165,6 +165,7 @@ export function AppProvider({ children }) {
     categoryName,
     project = "General",
     notes = "",
+    extraFields = {},
   ) => {
     if (activeActivity) {
       await stopCurrentActivity();
@@ -186,6 +187,7 @@ export function AppProvider({ children }) {
       startTime: now.toISOString(),
       endTime: null,
       duration: 0,
+      ...extraFields,
     };
 
     setActiveActivity(newAct);
@@ -215,6 +217,23 @@ export function AppProvider({ children }) {
       const next = [completedAct, ...prev];
       return next.sort((a, b) => new Date(b.startTime) - new Date(a.startTime));
     });
+
+    // If this activity was linked to a task, write the elapsed seconds back
+    if (activeActivity.taskId) {
+      setTasks((prev) =>
+        prev.map((t) => {
+          if (t.id !== activeActivity.taskId) return t;
+          const updated = {
+            ...t,
+            trackedSeconds: (t.trackedSeconds || 0) + timerSeconds,
+            updatedAt: now.toISOString(),
+          };
+          dbInstance.put("tasks", updated);
+          return updated;
+        }),
+      );
+    }
+
     setActiveActivity(null);
     setTimerSeconds(0);
     setIsPaused(false);
@@ -472,10 +491,7 @@ export function AppProvider({ children }) {
   };
 
   const toggleTaskActivity = async (task) => {
-    const isActiveTask =
-      activeActivity &&
-      activeActivity.project === "Tasks" &&
-      activeActivity.title === task.title;
+    const isActiveTask = activeActivity && activeActivity.taskId === task.id;
     if (isActiveTask) {
       await stopCurrentActivity();
       return { success: true, action: "stopped" };
@@ -494,8 +510,9 @@ export function AppProvider({ children }) {
     await startNewActivity(
       task.title,
       task.operationalCategory || "Tasks",
-      task.project || "Tasks",
+      task.project || "General",
       activityNotes,
+      { taskId: task.id },
     );
     return { success: true, action: "started" };
   };

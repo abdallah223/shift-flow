@@ -555,11 +555,9 @@ export default function TasksView() {
                   <div className="flex flex-wrap gap-2">
                     <button
                       onClick={() => handleTaskActivityToggle(task)}
-                      className={`rounded-lg border px-3 py-2 text-[11px] font-semibold transition-all ${activeActivity && activeActivity.project === "Tasks" && activeActivity.title === task.title ? "border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-300" : "border-slate-200 text-slate-600 hover:bg-slate-100 dark:border-slate-800 dark:text-slate-300 dark:hover:bg-slate-800"}`}
+                      className={`rounded-lg border px-3 py-2 text-[11px] font-semibold transition-all ${activeActivity?.taskId === task.id ? "border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-300" : "border-slate-200 text-slate-600 hover:bg-slate-100 dark:border-slate-800 dark:text-slate-300 dark:hover:bg-slate-800"}`}
                     >
-                      {activeActivity &&
-                      activeActivity.project === "Tasks" &&
-                      activeActivity.title === task.title
+                      {activeActivity?.taskId === task.id
                         ? "Stop activity"
                         : "Start activity"}
                     </button>

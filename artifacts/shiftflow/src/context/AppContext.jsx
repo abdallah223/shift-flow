@@ -63,16 +63,23 @@ export function AppProvider({ children }) {
         const { isPaused: savedPaused, ...activityData } = persisted;
 
         if (isRefresh) {
-          // Page was refreshed — restore and keep the timer running from actual elapsed time
-          const elapsedSeconds = Math.max(
-            0,
-            Math.floor(
-              (Date.now() - new Date(persisted.startTime).getTime()) / 1000,
-            ),
-          );
-          setActiveActivity(activityData);
-          setTimerSeconds(elapsedSeconds);
-          setIsPaused(savedPaused || false);
+          if (savedPaused) {
+            // Was paused before refresh — keep the frozen timer value, don't advance
+            setActiveActivity(activityData);
+            setTimerSeconds(persisted.timerSeconds ?? 0);
+            setIsPaused(true);
+          } else {
+            // Was running before refresh — compute true elapsed from startTime
+            const elapsedSeconds = Math.max(
+              0,
+              Math.floor(
+                (Date.now() - new Date(persisted.startTime).getTime()) / 1000,
+              ),
+            );
+            setActiveActivity(activityData);
+            setTimerSeconds(elapsedSeconds);
+            setIsPaused(false);
+          }
         } else {
           // Tab was closed — restore paused at the exact second the tab closed.
           // timerSeconds is saved every tick so it's accurate to within 1 second.

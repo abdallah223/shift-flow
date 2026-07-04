@@ -323,18 +323,6 @@ export default function TasksView() {
                 <option value="low">Low</option>
               </select>
             </label>
-            <label className="flex flex-col text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">
-              <span className="mb-1">Project / Team Scope</span>
-              <input
-                type="text"
-                value={draft.project}
-                onChange={(e) =>
-                  setDraft((prev) => ({ ...prev, project: e.target.value }))
-                }
-                placeholder="Support Team Alpha"
-                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200"
-              />
-            </label>
             <div className="flex items-end">
               <button
                 type="submit"

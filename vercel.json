@@ -1,0 +1,6 @@
+{
+  "buildCommand": "pnpm --filter @workspace/shiftflow run build",
+  "outputDirectory": "artifacts/shiftflow/dist/public",
+  "installCommand": "pnpm install",
+  "framework": null
+}

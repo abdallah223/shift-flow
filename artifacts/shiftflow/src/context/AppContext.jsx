@@ -382,6 +382,18 @@ export function AppProvider({ children }) {
     return { success: true };
   };
 
+  const updateActivity = async (id, patch) => {
+    const target = activities.find((a) => a.id === id);
+    if (!target) return;
+    const updated = { ...target, ...patch };
+    await dbInstance.put("activities", updated);
+    setActivities((prev) =>
+      prev
+        .map((a) => (a.id === id ? updated : a))
+        .sort((a, b) => new Date(b.startTime) - new Date(a.startTime)),
+    );
+  };
+
   const deleteActivity = async (id) => {
     const target = activities.find((a) => a.id === id);
     if (target) {
@@ -656,6 +668,7 @@ export function AppProvider({ children }) {
         setHistoryUndo,
         startNewActivity,
         stopCurrentActivity,
+        updateActivity,
         deleteActivity,
         addManualActivity,
         addLeaveEntry,

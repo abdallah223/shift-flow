@@ -34,6 +34,10 @@ export function AppProvider({ children }) {
   const [workHoursGoal, setWorkHoursGoal] = useState(8);
 
   const timerRef = useRef(null);
+  // Wall-clock refs so the interval always shows real elapsed time even when
+  // the browser throttles setInterval (minimized tab, background, etc.)
+  const timerBaseRef = useRef(0);       // seconds accumulated before current run
+  const timerRunSinceRef = useRef(null); // Date.now() when current run started
 
   // Keep localStorage in sync every second (timerSeconds changes every tick).
   // This means the last saved value is always ≤1s stale — no pagehide needed.
@@ -64,17 +68,21 @@ export function AppProvider({ children }) {
 
         if (isRefresh) {
           if (savedPaused) {
-            // Was paused before refresh — keep the frozen timer value, don't advance
+            // Was paused before refresh — restore frozen value, refs stay idle
+            const frozen = persisted.timerSeconds ?? 0;
+            timerBaseRef.current = frozen;
+            timerRunSinceRef.current = null;
             setActiveActivity(activityData);
-            setTimerSeconds(persisted.timerSeconds ?? 0);
+            setTimerSeconds(frozen);
             setIsPaused(true);
           } else {
-            // Was running before refresh — compute true elapsed from startTime
+            // Was running before refresh — anchor runSince to actual startTime
+            // so the wall-clock computation is correct immediately
+            timerBaseRef.current = 0;
+            timerRunSinceRef.current = new Date(persisted.startTime).getTime();
             const elapsedSeconds = Math.max(
               0,
-              Math.floor(
-                (Date.now() - new Date(persisted.startTime).getTime()) / 1000,
-              ),
+              Math.floor((Date.now() - timerRunSinceRef.current) / 1000),
             );
             setActiveActivity(activityData);
             setTimerSeconds(elapsedSeconds);
@@ -82,8 +90,9 @@ export function AppProvider({ children }) {
           }
         } else {
           // Tab was closed — restore paused at the exact second the tab closed.
-          // timerSeconds is saved every tick so it's accurate to within 1 second.
           const frozenSeconds = persisted.timerSeconds ?? 0;
+          timerBaseRef.current = frozenSeconds;
+          timerRunSinceRef.current = null;
           setActiveActivity(activityData);
           setTimerSeconds(frozenSeconds);
           setIsPaused(true);
@@ -140,7 +149,12 @@ export function AppProvider({ children }) {
   useEffect(() => {
     if (activeActivity && !isPaused) {
       timerRef.current = setInterval(() => {
-        setTimerSeconds((prev) => prev + 1);
+        if (timerRunSinceRef.current !== null) {
+          setTimerSeconds(
+            timerBaseRef.current +
+              Math.floor((Date.now() - timerRunSinceRef.current) / 1000),
+          );
+        }
       }, 1000);
     } else {
       clearInterval(timerRef.current);
@@ -190,6 +204,8 @@ export function AppProvider({ children }) {
       ...extraFields,
     };
 
+    timerBaseRef.current = 0;
+    timerRunSinceRef.current = Date.now();
     setActiveActivity(newAct);
     setTimerSeconds(0);
     setIsPaused(false);
@@ -545,6 +561,23 @@ export function AppProvider({ children }) {
     }
   };
 
+  const togglePause = () => {
+    setIsPaused((prev) => {
+      if (prev) {
+        // Resuming — start a new run period from now
+        timerRunSinceRef.current = Date.now();
+      } else {
+        // Pausing — accumulate elapsed seconds and stop the run period
+        if (timerRunSinceRef.current !== null) {
+          timerBaseRef.current +=
+            Math.floor((Date.now() - timerRunSinceRef.current) / 1000);
+          timerRunSinceRef.current = null;
+        }
+      }
+      return !prev;
+    });
+  };
+
   useEffect(() => {
     const handleKeyDown = (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key === "k") {
@@ -568,7 +601,7 @@ export function AppProvider({ children }) {
         case " ":
           e.preventDefault();
           if (activeActivity) {
-            setIsPaused((prev) => !prev);
+            togglePause();
           }
           break;
         case "e":
@@ -609,6 +642,7 @@ export function AppProvider({ children }) {
         setTimerSeconds,
         isPaused,
         setIsPaused,
+        togglePause,
         searchQuery,
         setSearchQuery,
         showQuickAdd,

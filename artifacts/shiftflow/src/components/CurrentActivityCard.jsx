@@ -3,7 +3,7 @@ import { useApp } from "../context/AppContext.jsx";
 import DynamicIcon from "./icons/DynamicIcon.jsx";
 
 export default function CurrentActivityCard() {
-  const { activeActivity, stopCurrentActivity, timerSeconds, isPaused, setIsPaused, setShowQuickAdd } = useApp();
+  const { activeActivity, stopCurrentActivity, timerSeconds, isPaused, togglePause, setShowQuickAdd } = useApp();
 
   const formatTime = (totalSeconds) => {
     const hrs = Math.floor(totalSeconds / 3600);
@@ -84,7 +84,7 @@ export default function CurrentActivityCard() {
 
         <div className="flex items-center space-x-2">
           <button
-            onClick={() => setIsPaused(!isPaused)}
+            onClick={togglePause}
             className={`p-2.5 rounded-lg border transition-all ${
               isPaused
                 ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20"

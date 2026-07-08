@@ -483,9 +483,14 @@ export default function TasksView() {
                     <div className="flex flex-wrap items-center gap-2">
                       <button
                         onClick={() => toggleTaskComplete(task.id)}
-                        className={`rounded-full p-1.5 ${task.completed ? "bg-emerald-500 text-white" : "bg-slate-100 text-slate-500 dark:bg-slate-900 dark:text-slate-300"}`}
+                        className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-semibold transition-all ${
+                          task.completed
+                            ? "bg-emerald-500 text-white hover:bg-emerald-600"
+                            : "bg-slate-100 text-slate-500 hover:bg-emerald-100 hover:text-emerald-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-emerald-900/40 dark:hover:text-emerald-400"
+                        }`}
                       >
-                        <DynamicIcon name="check-square" className="h-4 w-4" />
+                        <DynamicIcon name={task.completed ? "check-circle" : "circle"} className="h-3.5 w-3.5 shrink-0" />
+                        {task.completed ? "Completed" : "Mark Complete"}
                       </button>
                       <h4
                         className={`text-sm font-semibold ${task.completed ? "text-emerald-700 line-through dark:text-emerald-300" : "text-slate-800 dark:text-slate-200"}`}

@@ -251,7 +251,7 @@ export function AppProvider({ children }) {
           const updated = {
             ...t,
             trackedSeconds: (t.trackedSeconds || 0) + timerSeconds,
-            updatedAt: now.toISOString(),
+            updatedAt: endTime.toISOString(),
           };
           dbInstance.put("tasks", updated);
           return updated;

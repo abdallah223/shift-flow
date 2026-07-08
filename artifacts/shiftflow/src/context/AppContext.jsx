@@ -215,14 +215,23 @@ export function AppProvider({ children }) {
   const stopCurrentActivity = async () => {
     if (!activeActivity) return;
 
-    const now = new Date();
-    const start = new Date(activeActivity.startTime);
+    // Use the timer refs for actual tracked seconds — not wall-clock difference.
+    // This correctly handles paused activities (including sleep/tab-close gaps).
+    const elapsedSeconds =
+      timerBaseRef.current +
+      (timerRunSinceRef.current
+        ? Math.floor((Date.now() - timerRunSinceRef.current) / 1000)
+        : 0);
+    const elapsedMinutes = Math.max(1, Math.round(elapsedSeconds / 60));
 
-    const elapsedMinutes = Math.max(1, Math.round((now - start) / 60000));
+    // Derive endTime from startTime + tracked seconds so the activity lands on
+    // the correct day in the timeline (not stretched across overnight pauses).
+    const start = new Date(activeActivity.startTime);
+    const endTime = new Date(start.getTime() + elapsedSeconds * 1000);
 
     const completedAct = {
       ...activeActivity,
-      endTime: now.toISOString(),
+      endTime: endTime.toISOString(),
       duration: elapsedMinutes,
     };
 

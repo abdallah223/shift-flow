@@ -9,6 +9,7 @@ export default function CalendarView() {
   const heatMap = useMemo(() => {
     const mapping = {};
     activities.forEach((act) => {
+      if (act.category === "Leave (Planned)" || act.category === "Leave (Unplanned)") return;
       const dateStr = new Date(act.startTime).toDateString();
       mapping[dateStr] = (mapping[dateStr] || 0) + act.duration;
     });

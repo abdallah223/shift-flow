@@ -282,12 +282,18 @@ export function AppProvider({ children }) {
       };
     }
 
+    // Floor to minute precision so that sub-minute gaps between activities
+    // (e.g. activity ends at 10:00:30, new entry starts at 10:00:00) are not
+    // incorrectly flagged as overlaps.
+    const floorMin = (ms) => Math.floor(ms / 60000) * 60000;
+    const ns = floorMin(newStart.getTime());
+    const ne = floorMin(newEnd.getTime());
+
     const isHistoricalOverlap = activities.some((act) => {
-      const actStart = new Date(act.startTime).getTime();
-      const actEnd = act.endTime
-        ? new Date(act.endTime).getTime()
-        : now.getTime();
-      return newStart.getTime() < actEnd && newEnd.getTime() > actStart;
+      if (!act.endTime) return false; // skip entries with no end time
+      const actStart = floorMin(new Date(act.startTime).getTime());
+      const actEnd = floorMin(new Date(act.endTime).getTime());
+      return ns < actEnd && ne > actStart;
     });
 
     if (isHistoricalOverlap) {
@@ -298,11 +304,8 @@ export function AppProvider({ children }) {
     }
 
     if (activeActivity) {
-      const activeStart = new Date(activeActivity.startTime).getTime();
-      if (
-        newStart.getTime() < now.getTime() &&
-        newEnd.getTime() > activeStart
-      ) {
+      const activeStart = floorMin(new Date(activeActivity.startTime).getTime());
+      if (ne > activeStart) {
         return {
           success: false,
           error:
